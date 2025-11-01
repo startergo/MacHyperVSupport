@@ -28,6 +28,10 @@ jobs:
         run: |
           sudo xcode-select -s /Applications/Xcode_14.3.1.app/Contents/Developer
           xcodebuild -version
+      - name: Setup Python3 symlink for bootstrap
+        run: |
+          sudo mkdir -p /Applications/Xcode_14.3.1.app/Contents/Developer/usr/bin
+          sudo ln -sf /usr/bin/python3 /Applications/Xcode_14.3.1.app/Contents/Developer/usr/bin/python3
       - name: CI Bootstrap
         run: |
           src=$(/usr/bin/curl -Lfs https://raw.githubusercontent.com/acidanthera/ocbuild/master/ci-bootstrap.sh) && eval "$src" || exit 1
@@ -71,6 +75,10 @@ jobs:
         run: |
           sudo xcode-select -s /Applications/Xcode_14.3.1.app/Contents/Developer
           xcodebuild -version
+      - name: Setup Python3 symlink for bootstrap
+        run: |
+          sudo mkdir -p /Applications/Xcode_14.3.1.app/Contents/Developer/usr/bin
+          sudo ln -sf /usr/bin/python3 /Applications/Xcode_14.3.1.app/Contents/Developer/usr/bin/python3
       - name: CI Bootstrap
         run: |
           src=$(/usr/bin/curl -Lfs https://raw.githubusercontent.com/acidanthera/ocbuild/master/ci-bootstrap.sh) && eval "$src" || exit 1
@@ -102,6 +110,10 @@ jobs:
         run: |
           sudo xcode-select -s /Applications/Xcode_14.3.1.app/Contents/Developer
           xcodebuild -version
+      - name: Setup Python3 symlink for bootstrap
+        run: |
+          sudo mkdir -p /Applications/Xcode_14.3.1.app/Contents/Developer/usr/bin
+          sudo ln -sf /usr/bin/python3 /Applications/Xcode_14.3.1.app/Contents/Developer/usr/bin/python3
       - name: CI Bootstrap
         run: |
           src=$(/usr/bin/curl -Lfs https://raw.githubusercontent.com/acidanthera/ocbuild/master/ci-bootstrap.sh) && eval "$src" || exit 1
