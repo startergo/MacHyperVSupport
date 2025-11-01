@@ -9,6 +9,147 @@
 #include "HyperVPCIRoot.hpp"
 #include "HyperVPlatformProvider.hpp"
 
+//
+// Dirty rectangle tracking implementation.
+//
+void HyperVGraphics::initDirtyTracking() {
+  if (_screenWidth == 0 || _screenHeight == 0) {
+    return;
+  }
+
+  // Calculate number of tiles needed
+  _dirtyTilesX = (_screenWidth + kDirtyTileSize - 1) / kDirtyTileSize;
+  _dirtyTilesY = (_screenHeight + kDirtyTileSize - 1) / kDirtyTileSize;
+  _dirtyBitmapSize = ((_dirtyTilesX * _dirtyTilesY) + 7) / 8;  // Bits to bytes
+
+  // Allocate bitmap
+  _dirtyBitmap = static_cast<UInt8*>(IOMalloc(_dirtyBitmapSize));
+  if (_dirtyBitmap != nullptr) {
+    markFullScreenDirty();
+    HVDBGLOG("Initialized dirty tracking: %ux%u tiles, %u bytes", _dirtyTilesX, _dirtyTilesY, _dirtyBitmapSize);
+  } else {
+    HVDBGLOG("Failed to allocate dirty bitmap");
+  }
+}
+
+void HyperVGraphics::cleanupDirtyTracking() {
+  if (_dirtyBitmap != nullptr) {
+    IOFree(_dirtyBitmap, _dirtyBitmapSize);
+    _dirtyBitmap = nullptr;
+  }
+  _dirtyTilesX = 0;
+  _dirtyTilesY = 0;
+  _dirtyBitmapSize = 0;
+}
+
+void HyperVGraphics::markFullScreenDirty() {
+  _fullScreenDirty = true;
+  if (_dirtyBitmap != nullptr) {
+    memset(_dirtyBitmap, 0xFF, _dirtyBitmapSize);
+  }
+}
+
+void HyperVGraphics::markRegionDirty(UInt32 x, UInt32 y, UInt32 width, UInt32 height) {
+  if (_dirtyBitmap == nullptr) {
+    _fullScreenDirty = true;
+    return;
+  }
+
+  // Convert pixel coordinates to tile coordinates
+  UInt32 startTileX = x / kDirtyTileSize;
+  UInt32 startTileY = y / kDirtyTileSize;
+  UInt32 endTileX = (x + width + kDirtyTileSize - 1) / kDirtyTileSize;
+  UInt32 endTileY = (y + height + kDirtyTileSize - 1) / kDirtyTileSize;
+
+  // Clamp to valid range
+  if (endTileX > _dirtyTilesX) endTileX = _dirtyTilesX;
+  if (endTileY > _dirtyTilesY) endTileY = _dirtyTilesY;
+
+  // Mark tiles as dirty
+  for (UInt32 ty = startTileY; ty < endTileY; ty++) {
+    for (UInt32 tx = startTileX; tx < endTileX; tx++) {
+      UInt32 bitIndex = ty * _dirtyTilesX + tx;
+      _dirtyBitmap[bitIndex / 8] |= (1 << (bitIndex % 8));
+    }
+  }
+}
+
+bool HyperVGraphics::isDirty() {
+  if (_fullScreenDirty) {
+    return true;
+  }
+  if (_dirtyBitmap == nullptr) {
+    return true;  // No tracking, assume dirty
+  }
+
+  // Check if any bit is set
+  for (UInt32 i = 0; i < _dirtyBitmapSize; i++) {
+    if (_dirtyBitmap[i] != 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+UInt32 HyperVGraphics::buildDirtyRectangles(HyperVGraphicsImageUpdateRectangle *rects, UInt32 maxRects) {
+  if (_fullScreenDirty || _dirtyBitmap == nullptr) {
+    // Full screen update
+    rects[0].x1 = 0;
+    rects[0].y1 = 0;
+    rects[0].x2 = _screenWidth;
+    rects[0].y2 = _screenHeight;
+    return 1;
+  }
+
+  // Build rectangles from dirty tiles
+  // For simplicity, we'll use a scanline approach to merge adjacent dirty tiles
+  UInt32 rectCount = 0;
+
+  for (UInt32 ty = 0; ty < _dirtyTilesY && rectCount < maxRects; ty++) {
+    UInt32 startX = 0xFFFFFFFF;
+    
+    for (UInt32 tx = 0; tx <= _dirtyTilesX; tx++) {
+      bool isDirtyTile = false;
+      
+      if (tx < _dirtyTilesX) {
+        UInt32 bitIndex = ty * _dirtyTilesX + tx;
+        isDirtyTile = (_dirtyBitmap[bitIndex / 8] & (1 << (bitIndex % 8))) != 0;
+      }
+
+      if (isDirtyTile && startX == 0xFFFFFFFF) {
+        // Start of dirty region
+        startX = tx;
+      } else if (!isDirtyTile && startX != 0xFFFFFFFF) {
+        // End of dirty region, create rectangle
+        rects[rectCount].x1 = startX * kDirtyTileSize;
+        rects[rectCount].y1 = ty * kDirtyTileSize;
+        rects[rectCount].x2 = tx * kDirtyTileSize;
+        rects[rectCount].y2 = (ty + 1) * kDirtyTileSize;
+        
+        // Clamp to screen bounds
+        if (rects[rectCount].x2 > _screenWidth) rects[rectCount].x2 = _screenWidth;
+        if (rects[rectCount].y2 > _screenHeight) rects[rectCount].y2 = _screenHeight;
+        
+        rectCount++;
+        startX = 0xFFFFFFFF;
+        
+        if (rectCount >= maxRects) {
+          break;
+        }
+      }
+    }
+  }
+
+  return rectCount > 0 ? rectCount : 1;  // Return at least 1 (will be full screen)
+}
+
+void HyperVGraphics::clearDirtyFlags() {
+  _fullScreenDirty = false;
+  if (_dirtyBitmap != nullptr) {
+    memset(_dirtyBitmap, 0, _dirtyBitmapSize);
+  }
+}
+
 void HyperVGraphics::handleRefreshTimer(IOTimerEventSource *sender) {
   if (_fbReady) {
     refreshFramebufferImage();
@@ -49,6 +190,7 @@ void HyperVGraphics::handlePacket(VMBusPacketHeader *pktHeader, UInt32 pktHeader
           setScreenResolution(_screenWidth, _screenHeight, false);
         }
         if (gfxMsg->featureUpdate.isImageUpdateNeeded) {
+          markFullScreenDirty();
           refreshFramebufferImage();
         }
         if (gfxMsg->featureUpdate.isCursorShapeNeeded) {
@@ -149,21 +291,33 @@ IOReturn HyperVGraphics::refreshFramebufferImage() {
   IOReturn              status;
 
   //
-  // Send screen image update to Hyper-V.
+  // Check if there are any dirty regions to update.
+  //
+  if (!isDirty()) {
+    return kIOReturnSuccess;  // Nothing to update
+  }
+
+  //
+  // Build dirty rectangles for update.
+  //
+  UInt32 rectCount = buildDirtyRectangles(&gfxMsg.imageUpdate.rects[0], 1);
+  
+  //
+  // Send screen image update to Hyper-V with dirty regions.
   //
   gfxMsg.gfxHeader.type = kHyperVGraphicsMessageTypeImageUpdate;
-  gfxMsg.gfxHeader.size = sizeof (gfxMsg.gfxHeader) + sizeof (gfxMsg.imageUpdate);
+  gfxMsg.gfxHeader.size = sizeof (gfxMsg.gfxHeader) + sizeof (UInt8) * 2 + 
+                          sizeof (HyperVGraphicsImageUpdateRectangle) * rectCount;
 
   gfxMsg.imageUpdate.videoOutput = 0;
-  gfxMsg.imageUpdate.count       = 1;
-  gfxMsg.imageUpdate.rects[0].x1 = 0;
-  gfxMsg.imageUpdate.rects[0].y1 = 0;
-  gfxMsg.imageUpdate.rects[0].x2 = _screenWidth;
-  gfxMsg.imageUpdate.rects[0].y2 = _screenHeight;
+  gfxMsg.imageUpdate.count       = rectCount;
 
   status = sendGraphicsMessage(&gfxMsg);
   if (status != kIOReturnSuccess) {
     HVSYSLOG("Failed to send image update with status 0x%X", status);
+  } else {
+    // Clear dirty flags after successful update
+    clearDirtyFlags();
   }
   return status;
 }
@@ -276,6 +430,13 @@ IOReturn HyperVGraphics::setScreenResolutionGated(UInt32 *width, UInt32 *height,
   _screenWidth  = *width;
   _screenHeight = *height;
   HVDBGLOG("Screen resolution is now set to %ux%ux%u", _screenWidth, _screenHeight, getScreenDepth());
+  
+  //
+  // Reinitialize dirty tracking for new resolution.
+  //
+  cleanupDirtyTracking();
+  initDirtyTracking();
+  
   return kIOReturnSuccess;
 }
 

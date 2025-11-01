@@ -36,6 +36,16 @@ private:
   UInt32        _screenHeight   = 0;
   bool          _fbReady        = false;
 
+  //
+  // Dirty rectangle tracking for optimized screen updates.
+  //
+  static constexpr UInt32 kDirtyTileSize = 64;  // 64x64 pixel tiles
+  UInt32        _dirtyTilesX    = 0;  // Number of tiles horizontally
+  UInt32        _dirtyTilesY    = 0;  // Number of tiles vertically
+  UInt8         *_dirtyBitmap   = nullptr;  // Bitmap of dirty tiles
+  UInt32        _dirtyBitmapSize = 0;
+  bool          _fullScreenDirty = true;  // Force full update initially
+  
   HyperVGraphicsMessage     *_gfxMsgCursorShape     = nullptr;
   size_t                    _gfxMsgCursorShapeSize  = 0;
 
@@ -50,6 +60,18 @@ private:
                                HyperVGraphicsMessage *gfxMessageResponse = nullptr);
   IOReturn negotiateVersion(VMBusVersion version);
   IOReturn allocateGraphicsMemory(IOPhysicalAddress *outBase, UInt32 *outLength);
+  
+  //
+  // Dirty rectangle tracking.
+  //
+  void initDirtyTracking();
+  void cleanupDirtyTracking();
+  void markFullScreenDirty();
+  void markRegionDirty(UInt32 x, UInt32 y, UInt32 width, UInt32 height);
+  bool isDirty();
+  UInt32 buildDirtyRectangles(HyperVGraphicsImageUpdateRectangle *rects, UInt32 maxRects);
+  void clearDirtyFlags();
+  
   IOReturn refreshFramebufferImage();
   IOReturn setGraphicsMemory(IOPhysicalAddress base, UInt32 length);
   IOReturn setScreenResolution(UInt32 width, UInt32 height, bool waitForAck = true);

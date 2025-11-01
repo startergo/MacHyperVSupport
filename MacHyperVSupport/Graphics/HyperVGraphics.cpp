@@ -124,6 +124,11 @@ void HyperVGraphics::stop(IOService *provider) {
   }
 
   //
+  // Clean up dirty tracking.
+  //
+  cleanupDirtyTracking();
+
+  //
   // Deallocate graphics memory MMIO range.
   //
   if (_gfxBaseAllocated && (_gfxBase != 0)) {
