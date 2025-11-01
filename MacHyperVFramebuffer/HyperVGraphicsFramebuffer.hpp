@@ -28,6 +28,7 @@ private:
   IOService           *_hvGfxProvider = nullptr;
   IOPhysicalAddress   _gfxBase        = 0;
   UInt32              _gfxLength      = 0;
+  IOMemoryDescriptor  *_gfxMemoryDesc = nullptr;
   HyperVGraphicsMode  *_gfxModes      = nullptr;
   IOItemCount         _gfxModesCount  = 0;
   VMBusVersion        _gfxVersion     = { };

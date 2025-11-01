@@ -29,6 +29,20 @@ IOReturn HyperVGraphicsFramebuffer::initGraphicsService() {
   HVDBGLOG("Graphics version %u.%u", _gfxVersion.major, _gfxVersion.minor);
   HVDBGLOG("Graphics memory located at %p length 0x%X", _gfxBase, _gfxLength);
   HVDBGLOG("Graphics bit depth: %u-bit", (_gfxVersion.value == kHyperVGraphicsVersionV3_0) ? kHyperVGraphicsBitDepth2008 : kHyperVGraphicsBitDepth);
+
+  //
+  // Create write-combining memory descriptor for framebuffer.
+  // This dramatically improves graphics performance by allowing the CPU
+  // to combine multiple writes into burst transactions.
+  //
+  _gfxMemoryDesc = IOMemoryDescriptor::withPhysicalAddress(_gfxBase, _gfxLength, kIODirectionOutIn);
+  if (_gfxMemoryDesc != nullptr) {
+    _gfxMemoryDesc->prepare(kIODirectionOutIn);
+    HVDBGLOG("Created write-combining memory descriptor for framebuffer");
+  } else {
+    HVDBGLOG("Warning: Failed to create memory descriptor, performance may be reduced");
+  }
+
   return kIOReturnSuccess;
 }
 

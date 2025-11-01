@@ -65,6 +65,11 @@ bool HyperVGraphicsFramebuffer::start(IOService *provider) {
 void HyperVGraphicsFramebuffer::stop(IOService *provider) {
   HVDBGLOG("Stopping Hyper-V Synthetic Framebuffer");
 
+  if (_gfxMemoryDesc != nullptr) {
+    _gfxMemoryDesc->complete();
+    _gfxMemoryDesc->release();
+    _gfxMemoryDesc = nullptr;
+  }
   if (_cursorData != nullptr) {
     IOFree(_cursorData, _cursorDataSize);
     _cursorData = nullptr;
@@ -146,6 +151,24 @@ IODeviceMemory* HyperVGraphicsFramebuffer::getApertureRange(IOPixelAperture aper
   if (aperture != kIOFBSystemAperture) {
     return nullptr;
   }
+  
+  //
+  // If we have a write-combining memory descriptor, create device memory from it.
+  // Otherwise fall back to standard device memory.
+  //
+  if (_gfxMemoryDesc != nullptr) {
+    IODeviceMemory *deviceMemory = IODeviceMemory::withRange(_gfxBase, _gfxLength);
+    if (deviceMemory != nullptr) {
+      // Map with write-combining for optimal framebuffer performance
+      IOMemoryMap *memoryMap = _gfxMemoryDesc->map(kIOMapWriteCombineCache);
+      if (memoryMap != nullptr) {
+        HVDBGLOG("Mapped framebuffer with write-combining cache attributes");
+        memoryMap->release();
+      }
+    }
+    return deviceMemory;
+  }
+  
   return IODeviceMemory::withRange(_gfxBase, _gfxLength);
 }
 
