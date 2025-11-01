@@ -23,6 +23,10 @@ jobs:
         with:
           repository: acidanthera/MacKernelSDK
           path: MacKernelSDK
+      - name: Select Xcode 14.3.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_14.3.1.app/Contents/Developer
+          xcodebuild -version
       - name: CI Bootstrap
         run: |
           src=$(/usr/bin/curl -Lfs https://raw.githubusercontent.com/acidanthera/ocbuild/master/ci-bootstrap.sh) && eval "$src" || exit 1
@@ -61,6 +65,10 @@ jobs:
         with:
           repository: acidanthera/MacKernelSDK
           path: MacKernelSDK
+      - name: Select Xcode 14.3.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_14.3.1.app/Contents/Developer
+          xcodebuild -version
       - name: CI Bootstrap
         run: |
           src=$(/usr/bin/curl -Lfs https://raw.githubusercontent.com/acidanthera/ocbuild/master/ci-bootstrap.sh) && eval "$src" || exit 1
@@ -87,6 +95,10 @@ jobs:
         with:
           repository: acidanthera/MacKernelSDK
           path: MacKernelSDK
+      - name: Select Xcode 14.3.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_14.3.1.app/Contents/Developer
+          xcodebuild -version
       - name: CI Bootstrap
         run: |
           src=$(/usr/bin/curl -Lfs https://raw.githubusercontent.com/acidanthera/ocbuild/master/ci-bootstrap.sh) && eval "$src" || exit 1
