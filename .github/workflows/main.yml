@@ -17,6 +17,7 @@ jobs:
     runs-on: macos-13
     env:
       JOB_TYPE: BUILD
+      DEVELOPER_DIR: /Applications/Xcode_14.3.1.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
@@ -59,6 +60,7 @@ jobs:
     runs-on: macos-13
     env:
       JOB_TYPE: ANALYZE
+      DEVELOPER_DIR: /Applications/Xcode_14.3.1.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
@@ -88,6 +90,7 @@ jobs:
     runs-on: macos-13
     env:
       JOB_TYPE: COVERITY
+      DEVELOPER_DIR: /Applications/Xcode_14.3.1.app/Contents/Developer
     if: github.repository_owner == 'acidanthera' && github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@v4
