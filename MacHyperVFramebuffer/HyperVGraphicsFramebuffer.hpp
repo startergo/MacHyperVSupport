@@ -44,6 +44,7 @@ private:
   inline UInt32 getScreenDepth() { return (_gfxVersion.value == kHyperVGraphicsVersionV3_0) ? kHyperVGraphicsBitDepth2008 : kHyperVGraphicsBitDepth; }
   IOReturn initGraphicsService();
   IOReturn buildGraphicsModes();
+  IOReturn buildDynamicModes();
   IOReturn buildFallbackMode();
 
 public:

@@ -101,9 +101,10 @@ IOReturn HyperVGraphics::negotiateVersion(VMBusVersion version) {
 
 IOReturn HyperVGraphics::allocateGraphicsMemory(IOPhysicalAddress *outBase, UInt32 *outLength) {
   OSNumber *mmioBytesNumber;
+  OSNumber *overrideVRAM;
 
   //
-  // Get HyperVPCIRoot instance used for allocating MMIO regions..
+  // Get HyperVPCIRoot instance used for allocating MMIO regions.
   //
   HyperVPCIRoot *hvPCIRoot = HyperVPCIRoot::getPCIRootInstance();
   if (hvPCIRoot == nullptr) {
@@ -111,17 +112,35 @@ IOReturn HyperVGraphics::allocateGraphicsMemory(IOPhysicalAddress *outBase, UInt
   }
 
   //
-  // Get MMIO bytes.
+  // Check for manual VRAM size override via property.
   //
-  mmioBytesNumber = OSDynamicCast(OSNumber, _hvDevice->getProperty(kHyperVVMBusDeviceChannelMMIOByteCount));
-  if (mmioBytesNumber == nullptr) {
-    HVSYSLOG("Failed to get MMIO byte count");
+  overrideVRAM = OSDynamicCast(OSNumber, getProperty("VRAMSizeBytes"));
+  if (overrideVRAM != nullptr) {
+    *outLength = static_cast<UInt32>(overrideVRAM->unsigned64BitValue());
+    HVDBGLOG("Using override VRAM size: 0x%X bytes (%u MB)", *outLength, *outLength / (1024 * 1024));
+  } else {
+    //
+    // Get MMIO bytes from VMBus channel.
+    //
+    mmioBytesNumber = OSDynamicCast(OSNumber, _hvDevice->getProperty(kHyperVVMBusDeviceChannelMMIOByteCount));
+    if (mmioBytesNumber == nullptr) {
+      HVSYSLOG("Failed to get MMIO byte count");
+      return kIOReturnNoResources;
+    }
+    *outLength = static_cast<UInt32>(mmioBytesNumber->unsigned64BitValue());
+  }
+
+  //
+  // Allocate MMIO range dynamically.
+  //
+  *outBase = hvPCIRoot->allocateRange(*outLength, PAGE_SIZE, UINT64_MAX);
+  if (*outBase == 0) {
+    HVSYSLOG("Failed to allocate MMIO range for graphics memory (size: 0x%X bytes)", *outLength);
     return kIOReturnNoResources;
   }
-  *outLength = static_cast<UInt32>(mmioBytesNumber->unsigned64BitValue());
-  *outBase = 0xF8000000; //0xF8000000; // TODO: Make dynamic, no need to use this one.
+  _gfxBaseAllocated = true;
 
-  HVDBGLOG("Graphics memory will be located at %p length 0x%X", *outBase, *outLength);
+  HVDBGLOG("Graphics memory allocated at %p length 0x%X (%u MB)", *outBase, *outLength, *outLength / (1024 * 1024));
   return kIOReturnSuccess;
 }
 
@@ -183,20 +202,53 @@ IOReturn HyperVGraphics::setScreenResolution(UInt32 width, UInt32 height, bool w
 IOReturn HyperVGraphics::setScreenResolutionGated(UInt32 *width, UInt32 *height, bool *waitForAck) {
   HyperVGraphicsMessage gfxMsg = { };
   IOReturn              status;
+  UInt32                requiredVRAM;
 
   //
-  // Check bounds.
+  // Calculate required VRAM for this resolution.
+  //
+  requiredVRAM = (*width) * (*height) * (getScreenDepth() / kHyperVGraphicsBitsPerByte);
+
+  //
+  // Check version-specific bounds.
   //
   if (_gfxVersion.value == kHyperVGraphicsVersionV3_0) {
     if ((*width > kHyperVGraphicsMaxWidth2008) || (*height > kHyperVGraphicsMaxHeight2008)) {
-      HVSYSLOG("Invalid screen resolution %ux%u", *width, *height);
+      HVSYSLOG("Resolution %ux%u exceeds v3.0 maximum (%ux%u)", *width, *height,
+               kHyperVGraphicsMaxWidth2008, kHyperVGraphicsMaxHeight2008);
+      return kIOReturnBadArgument;
+    }
+  } else if (_gfxVersion.value == kHyperVGraphicsVersionV3_2) {
+    if ((*width > kHyperVGraphicsMaxWidth_V3_2) || (*height > kHyperVGraphicsMaxHeight_V3_2)) {
+      HVSYSLOG("Resolution %ux%u exceeds v3.2 maximum (%ux%u)", *width, *height,
+               kHyperVGraphicsMaxWidth_V3_2, kHyperVGraphicsMaxHeight_V3_2);
+      return kIOReturnBadArgument;
+    }
+  } else if (_gfxVersion.value == kHyperVGraphicsVersionV3_5) {
+    if ((*width > kHyperVGraphicsMaxWidth_V3_5) || (*height > kHyperVGraphicsMaxHeight_V3_5)) {
+      HVSYSLOG("Resolution %ux%u exceeds v3.5 maximum (%ux%u)", *width, *height,
+               kHyperVGraphicsMaxWidth_V3_5, kHyperVGraphicsMaxHeight_V3_5);
       return kIOReturnBadArgument;
     }
   }
-  if ((*width < kHyperVGraphicsMinWidth) || (*height < kHyperVGraphicsMinHeight)
-      || (*width * *height * (getScreenDepth() / kHyperVGraphicsBitsPerByte)) > _gfxLength) {
-    HVSYSLOG("Invalid screen resolution %ux%u", *width, *height);
+
+  //
+  // Check minimum bounds.
+  //
+  if ((*width < kHyperVGraphicsMinWidth) || (*height < kHyperVGraphicsMinHeight)) {
+    HVSYSLOG("Resolution %ux%u below minimum (%ux%u)", *width, *height,
+             kHyperVGraphicsMinWidth, kHyperVGraphicsMinHeight);
     return kIOReturnBadArgument;
+  }
+
+  //
+  // Check VRAM availability.
+  //
+  if (requiredVRAM > _gfxLength) {
+    HVSYSLOG("Resolution %ux%ux%u requires %u bytes (%u MB), only %u bytes (%u MB) available",
+             *width, *height, getScreenDepth(), requiredVRAM, requiredVRAM / (1024 * 1024),
+             _gfxLength, _gfxLength / (1024 * 1024));
+    return kIOReturnNoMemory;
   }
 
   //

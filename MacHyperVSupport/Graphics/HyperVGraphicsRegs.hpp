@@ -21,8 +21,15 @@
 //
 #define kHyperVGraphicsMinWidth           640
 #define kHyperVGraphicsMinHeight          480
+
+// Version-specific maximum resolutions
 #define kHyperVGraphicsMaxWidth2008       1600
 #define kHyperVGraphicsMaxHeight2008      1200
+#define kHyperVGraphicsMaxWidth_V3_2      3840
+#define kHyperVGraphicsMaxHeight_V3_2     2160
+#define kHyperVGraphicsMaxWidth_V3_5      7680
+#define kHyperVGraphicsMaxHeight_V3_5     4320
+
 #define kHyperVGraphicsBitDepth2008       16
 #define kHyperVGraphicsBitDepth           32
 #define kHyperVGraphicsBitsPerByte        8

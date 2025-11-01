@@ -122,6 +122,20 @@ void HyperVGraphics::stop(IOService *provider) {
     _gfxMsgCursorShape = nullptr;
   }
 
+  //
+  // Deallocate graphics memory MMIO range.
+  //
+  if (_gfxBaseAllocated && (_gfxBase != 0)) {
+    HyperVPCIRoot *hvPCIRoot = HyperVPCIRoot::getPCIRootInstance();
+    if (hvPCIRoot != nullptr) {
+      hvPCIRoot->deallocateRange(_gfxBase, _gfxLength);
+      HVDBGLOG("Deallocated graphics MMIO range at %p length 0x%X", _gfxBase, _gfxLength);
+    }
+    _gfxBase = 0;
+    _gfxLength = 0;
+    _gfxBaseAllocated = false;
+  }
+
   if (_hvDevice != nullptr) {
     _hvDevice->closeVMBusChannel();
     _hvDevice->uninstallPacketActions();

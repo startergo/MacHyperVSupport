@@ -72,6 +72,54 @@
 					<key>Width</key>
 					<integer>1280</integer>
 				</dict>
+				<dict>
+					<key>Height</key>
+					<integer>768</integer>
+					<key>Width</key>
+					<integer>1366</integer>
+				</dict>
+				<dict>
+					<key>Height</key>
+					<integer>900</integer>
+					<key>Width</key>
+					<integer>1440</integer>
+				</dict>
+				<dict>
+					<key>Height</key>
+					<integer>900</integer>
+					<key>Width</key>
+					<integer>1600</integer>
+				</dict>
+				<dict>
+					<key>Height</key>
+					<integer>1050</integer>
+					<key>Width</key>
+					<integer>1680</integer>
+				</dict>
+				<dict>
+					<key>Height</key>
+					<integer>1080</integer>
+					<key>Width</key>
+					<integer>1920</integer>
+				</dict>
+				<dict>
+					<key>Height</key>
+					<integer>1200</integer>
+					<key>Width</key>
+					<integer>1920</integer>
+				</dict>
+				<dict>
+					<key>Height</key>
+					<integer>1440</integer>
+					<key>Width</key>
+					<integer>2560</integer>
+				</dict>
+				<dict>
+					<key>Height</key>
+					<integer>2160</integer>
+					<key>Width</key>
+					<integer>3840</integer>
+				</dict>
 			</array>
 		</dict>
 	</dict>

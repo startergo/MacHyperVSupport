@@ -31,6 +31,7 @@ private:
   UInt32             _bitDepth            = 32; // TODO: Not all version support 32-bit
   IOPhysicalAddress  _gfxBase             = 0;
   UInt32             _gfxLength           = 0;
+  bool               _gfxBaseAllocated    = false;
   UInt32        _screenWidth    = 0;
   UInt32        _screenHeight   = 0;
   bool          _fbReady        = false;
