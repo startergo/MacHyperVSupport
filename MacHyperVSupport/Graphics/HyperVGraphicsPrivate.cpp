@@ -140,7 +140,17 @@ UInt32 HyperVGraphics::buildDirtyRectangles(HyperVGraphicsImageUpdateRectangle *
     }
   }
 
-  return rectCount > 0 ? rectCount : 1;  // Return at least 1 (will be full screen)
+  // If no rectangles were built (shouldn't happen if isDirty() returned true),
+  // fall back to full screen update
+  if (rectCount == 0) {
+    rects[0].x1 = 0;
+    rects[0].y1 = 0;
+    rects[0].x2 = _screenWidth;
+    rects[0].y2 = _screenHeight;
+    return 1;
+  }
+
+  return rectCount;
 }
 
 void HyperVGraphics::clearDirtyFlags() {

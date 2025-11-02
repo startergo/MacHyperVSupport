@@ -55,8 +55,17 @@ bool HyperVGraphicsFramebuffer::start(IOService *provider) {
 
   //
   // Add model to PCI device.
+  // Apple convention for the "model" property (kIOPropertyModelKey) is OSData
+  // containing an ASCII, typically NUL-terminated, string, not OSString.
+  // This prevents crashes in applications like Geekbench that expect OSData
+  // and call -[NSData bytes] without type checking.
   //
-  pciDevice->setProperty("model", "Hyper-V Graphics");
+  static const char kHvGfxModel[] = "Hyper-V Graphics";
+  OSData *modelData = OSData::withBytes(kHvGfxModel, sizeof(kHvGfxModel));
+  if (modelData != nullptr) {
+    pciDevice->setProperty("model", modelData);
+    modelData->release();
+  }
 
   HVDBGLOG("Initialized Hyper-V Synthetic Framebuffer");
   return true;
