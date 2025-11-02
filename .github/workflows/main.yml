@@ -17,27 +17,15 @@ jobs:
     runs-on: macos-15-intel
     env:
       JOB_TYPE: BUILD
-      DEVELOPER_DIR: /Applications/Xcode_14.3.1.app/Contents/Developer
-      BUILD_DEVELOPER_DIR: /Applications/Xcode_14.3.1.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
           repository: acidanthera/MacKernelSDK
           path: MacKernelSDK
-      - name: Select Xcode 14.3.1
-        run: |
-          sudo xcode-select -s /Applications/Xcode_14.3.1.app/Contents/Developer
-          xcodebuild -version
-      - name: Setup Python3 symlink for bootstrap
-        run: |
-          sudo mkdir -p /Applications/Xcode_14.3.1.app/Contents/Developer/usr/bin
-          sudo ln -sf /usr/bin/python3 /Applications/Xcode_14.3.1.app/Contents/Developer/usr/bin/python3
       - name: CI Bootstrap
         run: |
-          src=$(/usr/bin/curl -Lfs https://raw.githubusercontent.com/acidanthera/ocbuild/master/ci-bootstrap.sh)
-          src="${src//XCODE_VERSION=\"16.4.0\"/XCODE_VERSION=\"14.3.1\"}"
-          eval "$src" || exit 1
+          src=$(/usr/bin/curl -Lfs https://raw.githubusercontent.com/acidanthera/ocbuild/master/ci-bootstrap.sh) && eval "$src" || exit 1
       - name: macOS 10.13 SDK Bootstrap
         run: |
           src=$(/usr/bin/curl -Lfs https://raw.githubusercontent.com/acidanthera/ocbuild/master/macosx10.13-sdk-bootstrap.sh) && eval "$src" || exit 1
@@ -67,27 +55,15 @@ jobs:
     runs-on: macos-15-intel
     env:
       JOB_TYPE: ANALYZE
-      DEVELOPER_DIR: /Applications/Xcode_14.3.1.app/Contents/Developer
-      ANALYZE_DEVELOPER_DIR: /Applications/Xcode_14.3.1.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
           repository: acidanthera/MacKernelSDK
           path: MacKernelSDK
-      - name: Select Xcode 14.3.1
-        run: |
-          sudo xcode-select -s /Applications/Xcode_14.3.1.app/Contents/Developer
-          xcodebuild -version
-      - name: Setup Python3 symlink for bootstrap
-        run: |
-          sudo mkdir -p /Applications/Xcode_14.3.1.app/Contents/Developer/usr/bin
-          sudo ln -sf /usr/bin/python3 /Applications/Xcode_14.3.1.app/Contents/Developer/usr/bin/python3
       - name: CI Bootstrap
         run: |
-          src=$(/usr/bin/curl -Lfs https://raw.githubusercontent.com/acidanthera/ocbuild/master/ci-bootstrap.sh)
-          src="${src//XCODE_VERSION=\"16.4.0\"/XCODE_VERSION=\"14.3.1\"}"
-          eval "$src" || exit 1
+          src=$(/usr/bin/curl -Lfs https://raw.githubusercontent.com/acidanthera/ocbuild/master/ci-bootstrap.sh) && eval "$src" || exit 1
       - name: macOS 10.13 SDK Bootstrap
         run: |
           src=$(/usr/bin/curl -Lfs https://raw.githubusercontent.com/acidanthera/ocbuild/master/macosx10.13-sdk-bootstrap.sh) && eval "$src" || exit 1
@@ -104,8 +80,6 @@ jobs:
     runs-on: macos-15-intel
     env:
       JOB_TYPE: COVERITY
-      DEVELOPER_DIR: /Applications/Xcode_14.3.1.app/Contents/Developer
-      COVERITY_DEVELOPER_DIR: /Applications/Xcode_14.3.1.app/Contents/Developer
     if: github.repository_owner == 'acidanthera' && github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@v4
@@ -113,19 +87,9 @@ jobs:
         with:
           repository: acidanthera/MacKernelSDK
           path: MacKernelSDK
-      - name: Select Xcode 14.3.1
-        run: |
-          sudo xcode-select -s /Applications/Xcode_14.3.1.app/Contents/Developer
-          xcodebuild -version
-      - name: Setup Python3 symlink for bootstrap
-        run: |
-          sudo mkdir -p /Applications/Xcode_14.3.1.app/Contents/Developer/usr/bin
-          sudo ln -sf /usr/bin/python3 /Applications/Xcode_14.3.1.app/Contents/Developer/usr/bin/python3
       - name: CI Bootstrap
         run: |
-          src=$(/usr/bin/curl -Lfs https://raw.githubusercontent.com/acidanthera/ocbuild/master/ci-bootstrap.sh)
-          src="${src//XCODE_VERSION=\"16.4.0\"/XCODE_VERSION=\"14.3.1\"}"
-          eval "$src" || exit 1
+          src=$(/usr/bin/curl -Lfs https://raw.githubusercontent.com/acidanthera/ocbuild/master/ci-bootstrap.sh) && eval "$src" || exit 1
       - name: macOS 10.13 SDK Bootstrap
         run: |
           src=$(/usr/bin/curl -Lfs https://raw.githubusercontent.com/acidanthera/ocbuild/master/macosx10.13-sdk-bootstrap.sh) && eval "$src" || exit 1
