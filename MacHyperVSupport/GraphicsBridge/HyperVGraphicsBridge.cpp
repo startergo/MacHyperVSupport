@@ -17,9 +17,9 @@ bool HyperVGraphicsBridge::init(OSDictionary *dictionary) {
   }
 
   //
-  // Initialize PCI lock and fake PCI config space early to avoid race condition.
-  // IOGraphicsFamily may try to read PCI config space before start() completes,
-  // causing a spinlock timeout panic if _pciLock is not yet allocated.
+  // Allocate PCI lock early to prevent spinlock timeout if config space
+  // is accessed before start() completes. The lock must exist throughout
+  // the object's lifetime.
   //
   _pciLock = IOSimpleLockAlloc();
   if (_pciLock == nullptr) {
@@ -28,7 +28,10 @@ bool HyperVGraphicsBridge::init(OSDictionary *dictionary) {
 
   //
   // Zero out fake PCI device space.
-  // Actual config values will be set in start() once we have console info.
+  // We cannot populate valid PCI config values here because we need
+  // console info (PE_Video) from the provider, which isn't available
+  // until start(). The config space will be populated in start() before
+  // we register with the PCI root and call super::start().
   //
   bzero(_fakePCIDeviceSpace, sizeof(_fakePCIDeviceSpace));
 
@@ -110,23 +113,15 @@ bool HyperVGraphicsBridge::start(IOService *provider) {
   }
 
   //
-  // Register with root PCI bridge.
+  // Fill PCI device config space with actual values BEFORE registering.
+  // PCI bridge will contain a single PCI graphics device with the
+  // framebuffer memory at BAR0. The vendor/device ID is the same as
+  // what a generation 1 Hyper-V VM uses for the emulated graphics.
   //
-  status = hvPCIRoot->registerChildPCIBridge(this, &_pciBusNumber);
-  if (status != kIOReturnSuccess) {
-    HVSYSLOG("Failed to register with root PCI bus instance");
-    return false;
-  }
-
-  //
-  // Fill PCI device config space with actual values.
-  // PCI bridge will contain a single PCI graphics device
-  // with the framebuffer memory at BAR0. The vendor/device ID is
-  // the same as what a generation 1 Hyper-V VM uses for the
-  // emulated graphics.
-  //
-  // Note: _fakePCIDeviceSpace is already zeroed in init() to avoid
-  // race condition with IOGraphicsFamily probing before start() completes.
+  // IMPORTANT: This must be done before registerChildPCIBridge() to avoid
+  // IOGraphicsFamily seeing invalid/zeroed PCI config space and failing
+  // to attach. The root PCI bridge only forwards config-space access to
+  // child bridges after registration, so this prevents early probing.
   //
   OSWriteLittleInt16(_fakePCIDeviceSpace, kIOPCIConfigVendorID, kHyperVPCIVendorMicrosoft);
   OSWriteLittleInt16(_fakePCIDeviceSpace, kIOPCIConfigDeviceID, kHyperVPCIDeviceHyperVVideo);
@@ -135,6 +130,21 @@ bool HyperVGraphicsBridge::start(IOService *provider) {
   OSWriteLittleInt16(_fakePCIDeviceSpace, kIOPCIConfigSubSystemID, kHyperVPCIDeviceHyperVVideo);
   OSWriteLittleInt32(_fakePCIDeviceSpace, kIOPCIConfigBaseAddress0, (UInt32)_fbInitialBase);
 
+  //
+  // Register with root PCI bridge AFTER populating config space.
+  // This prevents HyperVPCIRoot from forwarding config reads/writes to us
+  // until we have valid data ready.
+  //
+  status = hvPCIRoot->registerChildPCIBridge(this, &_pciBusNumber);
+  if (status != kIOReturnSuccess) {
+    HVSYSLOG("Failed to register with root PCI bus instance");
+    return false;
+  }
+
+  //
+  // Call super::start() AFTER registration so IOKit can properly discover
+  // and attach child devices with valid PCI config space.
+  //
   if (!super::start(provider)) {
     HVSYSLOG("super::start() returned false");
     return false;
