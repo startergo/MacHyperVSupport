@@ -246,12 +246,15 @@ IOReturn HyperVGraphics::allocateGraphicsMemory(IOPhysicalAddress *outBase, UInt
   OSNumber *overrideVRAM;
 
   //
-  // Get HyperVPCIRoot instance used for allocating MMIO regions.
+  // Hyper-V reserves 0xF8000000 specifically for synthetic video device.
+  // This address is safe because:
+  // 1. Hyper-V explicitly reserves it for synthvid in ACPI tables
+  // 2. Won't conflict with DDA (Discrete Device Assignment) device BARs
+  // 3. DDA devices get pre-assigned physical addresses that avoid this range
+  // 4. The PCI allocator can't disambiguate DDA vs. available MMIO space,
+  //    so using the known-safe reserved address avoids potential conflicts.
   //
-  HyperVPCIRoot *hvPCIRoot = HyperVPCIRoot::getPCIRootInstance();
-  if (hvPCIRoot == nullptr) {
-    return kIOReturnNotFound;
-  }
+  const IOPhysicalAddress kHyperVSyntheticVideoReservedBase = 0xF8000000;
 
   //
   // Check for manual VRAM size override via property.
@@ -273,16 +276,14 @@ IOReturn HyperVGraphics::allocateGraphicsMemory(IOPhysicalAddress *outBase, UInt
   }
 
   //
-  // Allocate MMIO range dynamically.
+  // Use the Hyper-V reserved address for synthetic video.
+  // This is the safest approach for both synthetic-only and DDA configurations.
   //
-  *outBase = hvPCIRoot->allocateRange(*outLength, PAGE_SIZE, UINT64_MAX);
-  if (*outBase == 0) {
-    HVSYSLOG("Failed to allocate MMIO range for graphics memory (size: 0x%X bytes)", *outLength);
-    return kIOReturnNoResources;
-  }
-  _gfxBaseAllocated = true;
+  *outBase = kHyperVSyntheticVideoReservedBase;
+  _gfxBaseAllocated = false;  // Not dynamically allocated, so don't free in stop()
 
-  HVDBGLOG("Graphics memory allocated at %p length 0x%X (%u MB)", *outBase, *outLength, *outLength / (1024 * 1024));
+  HVDBGLOG("Graphics memory using Hyper-V reserved address %p length 0x%X (%u MB)", 
+           *outBase, *outLength, *outLength / (1024 * 1024));
   return kIOReturnSuccess;
 }
 
