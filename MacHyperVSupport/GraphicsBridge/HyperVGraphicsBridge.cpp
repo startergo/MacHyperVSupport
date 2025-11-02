@@ -11,6 +11,42 @@
 
 OSDefineMetaClassAndStructors(HyperVGraphicsBridge, super);
 
+bool HyperVGraphicsBridge::init(OSDictionary *dictionary) {
+  if (!super::init(dictionary)) {
+    return false;
+  }
+
+  //
+  // Initialize PCI lock and fake PCI config space early to avoid race condition.
+  // IOGraphicsFamily may try to read PCI config space before start() completes,
+  // causing a spinlock timeout panic if _pciLock is not yet allocated.
+  //
+  _pciLock = IOSimpleLockAlloc();
+  if (_pciLock == nullptr) {
+    return false;
+  }
+
+  //
+  // Zero out fake PCI device space.
+  // Actual config values will be set in start() once we have console info.
+  //
+  bzero(_fakePCIDeviceSpace, sizeof(_fakePCIDeviceSpace));
+
+  return true;
+}
+
+void HyperVGraphicsBridge::free() {
+  //
+  // Free PCI lock if allocated.
+  //
+  if (_pciLock != nullptr) {
+    IOSimpleLockFree(_pciLock);
+    _pciLock = nullptr;
+  }
+
+  super::free();
+}
+
 IOService* HyperVGraphicsBridge::probe(IOService *provider, SInt32 *score) {
   HyperVPCIRoot *hvPCIRoot;
 
@@ -74,30 +110,24 @@ bool HyperVGraphicsBridge::start(IOService *provider) {
   }
 
   //
-  // Allocate PCI lock and register with root PCI bridge.
+  // Register with root PCI bridge.
   //
-  _pciLock = IOSimpleLockAlloc();
-  if (_pciLock == nullptr) {
-    HVSYSLOG("Failed to allocate PCI lock");
-    return false;
-  }
-
   status = hvPCIRoot->registerChildPCIBridge(this, &_pciBusNumber);
   if (status != kIOReturnSuccess) {
     HVSYSLOG("Failed to register with root PCI bus instance");
-    IOSimpleLockFree(_pciLock);
     return false;
   }
 
   //
-  // Fill PCI device config space.
-  //
+  // Fill PCI device config space with actual values.
   // PCI bridge will contain a single PCI graphics device
   // with the framebuffer memory at BAR0. The vendor/device ID is
   // the same as what a generation 1 Hyper-V VM uses for the
   // emulated graphics.
   //
-  bzero(_fakePCIDeviceSpace, sizeof (_fakePCIDeviceSpace));
+  // Note: _fakePCIDeviceSpace is already zeroed in init() to avoid
+  // race condition with IOGraphicsFamily probing before start() completes.
+  //
   OSWriteLittleInt16(_fakePCIDeviceSpace, kIOPCIConfigVendorID, kHyperVPCIVendorMicrosoft);
   OSWriteLittleInt16(_fakePCIDeviceSpace, kIOPCIConfigDeviceID, kHyperVPCIDeviceHyperVVideo);
   OSWriteLittleInt32(_fakePCIDeviceSpace, kIOPCIConfigRevisionID, 0x3000000);
@@ -107,7 +137,6 @@ bool HyperVGraphicsBridge::start(IOService *provider) {
 
   if (!super::start(provider)) {
     HVSYSLOG("super::start() returned false");
-    IOSimpleLockFree(_pciLock);
     return false;
   }
 
@@ -118,9 +147,10 @@ bool HyperVGraphicsBridge::start(IOService *provider) {
 void HyperVGraphicsBridge::stop(IOService *provider) {
   HVDBGLOG("Hyper-V Synthetic Graphics Bridge is stopping");
 
-  if (_pciLock != nullptr) {
-    IOSimpleLockFree(_pciLock);
-  }
+  //
+  // Note: _pciLock is freed in free(), not here, to ensure it's
+  // available during the entire object lifetime.
+  //
 
   super::stop(provider);
 }
@@ -140,6 +170,11 @@ UInt32 HyperVGraphicsBridge::configRead32(IOPCIAddressSpace space, UInt8 offset)
 
   if (space.es.deviceNum != 0 || space.es.functionNum != 0) {
     return 0xFFFFFFFF;
+  }
+
+  if (_pciLock == nullptr) {
+    HVDBGLOG("Warning: PCI lock not initialized, returning safe value");
+    return OSReadLittleInt32(_fakePCIDeviceSpace, offset);
   }
 
   ints = IOSimpleLockLockDisableInterrupt(_pciLock);
@@ -168,6 +203,12 @@ void HyperVGraphicsBridge::configWrite32(IOPCIAddressSpace space, UInt8 offset, 
     return;
   }
 
+  if (_pciLock == nullptr) {
+    HVDBGLOG("Warning: PCI lock not initialized");
+    OSWriteLittleInt32(_fakePCIDeviceSpace, offset, data);
+    return;
+  }
+
   ints = IOSimpleLockLockDisableInterrupt(_pciLock);
   OSWriteLittleInt32(_fakePCIDeviceSpace, offset, data);
   IOSimpleLockUnlockEnableInterrupt(_pciLock, ints);
@@ -179,6 +220,15 @@ UInt16 HyperVGraphicsBridge::configRead16(IOPCIAddressSpace space, UInt8 offset)
 
   if (space.es.deviceNum != 0 || space.es.functionNum != 0) {
     return 0xFFFF;
+  }
+
+  //
+  // Safety check: _pciLock should always be allocated in init(),
+  // but check to prevent null pointer dereference.
+  //
+  if (_pciLock == nullptr) {
+    HVDBGLOG("Warning: PCI lock not initialized, returning safe value");
+    return OSReadLittleInt16(_fakePCIDeviceSpace, offset);
   }
 
   ints = IOSimpleLockLockDisableInterrupt(_pciLock);
@@ -199,6 +249,12 @@ void HyperVGraphicsBridge::configWrite16(IOPCIAddressSpace space, UInt8 offset, 
   }
   HVDBGLOG("Writing 16-bit value %u to offset 0x%X", data, offset);
 
+  if (_pciLock == nullptr) {
+    HVDBGLOG("Warning: PCI lock not initialized");
+    OSWriteLittleInt16(_fakePCIDeviceSpace, offset, data);
+    return;
+  }
+
   ints = IOSimpleLockLockDisableInterrupt(_pciLock);
   OSWriteLittleInt16(_fakePCIDeviceSpace, offset, data);
   IOSimpleLockUnlockEnableInterrupt(_pciLock, ints);
@@ -210,6 +266,11 @@ UInt8 HyperVGraphicsBridge::configRead8(IOPCIAddressSpace space, UInt8 offset) {
 
   if (space.es.deviceNum != 0 || space.es.functionNum != 0) {
     return 0xFF;
+  }
+
+  if (_pciLock == nullptr) {
+    HVDBGLOG("Warning: PCI lock not initialized, returning safe value");
+    return _fakePCIDeviceSpace[offset];
   }
 
   ints = IOSimpleLockLockDisableInterrupt(_pciLock);
@@ -229,6 +290,12 @@ void HyperVGraphicsBridge::configWrite8(IOPCIAddressSpace space, UInt8 offset, U
     return;
   }
   HVDBGLOG("Writing 8-bit value %u to offset 0x%X", data, offset);
+
+  if (_pciLock == nullptr) {
+    HVDBGLOG("Warning: PCI lock not initialized");
+    _fakePCIDeviceSpace[offset] = data;
+    return;
+  }
 
   ints = IOSimpleLockLockDisableInterrupt(_pciLock);
   _fakePCIDeviceSpace[offset] = data;
