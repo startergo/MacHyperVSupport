@@ -162,6 +162,13 @@ void HyperVGraphics::clearDirtyFlags() {
 
 void HyperVGraphics::handleRefreshTimer(IOTimerEventSource *sender) {
   if (_fbReady) {
+    //
+    // Mark the full screen as dirty before each refresh.
+    // This ensures display updates are sent even when we can't detect
+    // framebuffer writes from IOGraphicsFamily. Without this, the display
+    // remains frozen because isDirty() returns false.
+    //
+    markFullScreenDirty();
     refreshFramebufferImage();
   }
   _timerEventSource->setTimeoutMS(kHyperVGraphicsImageUpdateRefreshRateMS);

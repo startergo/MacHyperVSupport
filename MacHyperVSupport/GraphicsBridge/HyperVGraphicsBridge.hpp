@@ -12,6 +12,8 @@
 
 #include "HyperVVMBusDevice.hpp"
 
+class HyperVGraphics;
+
 class HyperVGraphicsBridge : public HV_PCIBRIDGE_CLASS {
   OSDeclareDefaultStructors(HyperVGraphicsBridge);
   HVDeclareLogFunctions("gfxb");

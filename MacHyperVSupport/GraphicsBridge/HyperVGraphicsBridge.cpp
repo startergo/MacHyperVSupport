@@ -7,6 +7,7 @@
 
 #include "HyperVGraphicsBridge.hpp"
 #include "HyperVGraphics.hpp"
+#include "HyperVGraphicsPlatformFunctions.hpp"
 #include "HyperVPCIRoot.hpp"
 
 OSDefineMetaClassAndStructors(HyperVGraphicsBridge, super);
@@ -81,6 +82,10 @@ IOService* HyperVGraphicsBridge::probe(IOService *provider, SInt32 *score) {
 bool HyperVGraphicsBridge::start(IOService *provider) {
   PE_Video consoleInfo = { };
   HyperVPCIRoot *hvPCIRoot;
+  HyperVGraphics *gfxProvider;
+  VMBusVersion gfxVersion = { };
+  IOPhysicalAddress actualGfxBase = 0;
+  UInt32 actualGfxLength = 0;
   IOReturn status;
 
   HVCheckDebugArgs();
@@ -102,6 +107,33 @@ bool HyperVGraphicsBridge::start(IOService *provider) {
          consoleInfo.v_baseAddr, consoleInfo.v_width, consoleInfo.v_height, consoleInfo.v_depth, consoleInfo.v_rowBytes);
   _fbInitialBase   = (UInt32)consoleInfo.v_baseAddr;
   _fbInitialLength = (UInt32)(consoleInfo.v_height * consoleInfo.v_rowBytes);
+
+  //
+  // Get the actual VRAM size from the graphics provider if available.
+  // The graphics provider may allocate a much larger VRAM than the initial
+  // console framebuffer size, especially for higher resolution support.
+  //
+  gfxProvider = OSDynamicCast(HyperVGraphics, provider);
+  if (gfxProvider != nullptr) {
+    const OSSymbol *initFunc = OSSymbol::withCStringNoCopy(kHyperVGraphicsPlatformFunctionInit);
+    if (initFunc != nullptr) {
+      status = gfxProvider->callPlatformFunction(initFunc, true,
+                                                 &gfxVersion, &actualGfxBase, &actualGfxLength, nullptr);
+      if (status == kIOReturnSuccess && actualGfxLength > _fbInitialLength) {
+        HVDBGLOG("Using actual VRAM size 0x%X (%u MB) instead of initial 0x%X",
+                 actualGfxLength, actualGfxLength / (1024 * 1024), _fbInitialLength);
+        _fbInitialLength = actualGfxLength;
+        //
+        // Keep using the Hyper-V reserved base address for consistency.
+        // The actual base should match what we're already using.
+        //
+        if (actualGfxBase != 0 && actualGfxBase == _fbInitialBase) {
+          HVDBGLOG("Confirmed graphics base address matches: %p", actualGfxBase);
+        }
+      }
+      initFunc->release();
+    }
+  }
 
   //
   // Locate root PCI bus instance.
