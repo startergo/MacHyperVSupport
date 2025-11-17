@@ -29,6 +29,7 @@ private:
   UInt8             _fakePCIDeviceSpace[256];
   UInt32            _fbInitialBase    = 0;
   UInt32            _fbInitialLength  = 0;
+  bool              _barSizeUpdated   = false;
 
 public:
   //
@@ -39,6 +40,7 @@ public:
   IOService *probe(IOService *provider, SInt32 *score) APPLE_KEXT_OVERRIDE;
   bool start(IOService *provider) APPLE_KEXT_OVERRIDE;
   void stop(IOService *provider) APPLE_KEXT_OVERRIDE;
+  IOReturn message(UInt32 type, IOService *provider, void *argument) APPLE_KEXT_OVERRIDE;
 
   //
   // IOPCIBridge overrides.

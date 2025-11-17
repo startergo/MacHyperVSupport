@@ -113,15 +113,23 @@ bool HyperVGraphicsBridge::start(IOService *provider) {
   // The graphics provider may allocate a much larger VRAM than the initial
   // console framebuffer size, especially for higher resolution support.
   //
+  HVDBGLOG("Initial framebuffer: base=0x%X length=0x%X (%u MB)",
+           _fbInitialBase, _fbInitialLength, _fbInitialLength / (1024 * 1024));
+  
   gfxProvider = OSDynamicCast(HyperVGraphics, provider);
   if (gfxProvider != nullptr) {
     const OSSymbol *initFunc = OSSymbol::withCStringNoCopy(kHyperVGraphicsPlatformFunctionInit);
     if (initFunc != nullptr) {
+      HVDBGLOG("Querying graphics provider for actual VRAM size...");
       status = gfxProvider->callPlatformFunction(initFunc, true,
                                                  &gfxVersion, &actualGfxBase, &actualGfxLength, nullptr);
+      HVDBGLOG("Platform function returned: status=0x%X, base=%p, length=0x%X (%u MB)",
+               status, actualGfxBase, actualGfxLength, actualGfxLength / (1024 * 1024));
+      
       if (status == kIOReturnSuccess && actualGfxLength > _fbInitialLength) {
-        HVDBGLOG("Using actual VRAM size 0x%X (%u MB) instead of initial 0x%X",
-                 actualGfxLength, actualGfxLength / (1024 * 1024), _fbInitialLength);
+        HVSYSLOG("Updated VRAM size from 0x%X (%u MB) to 0x%X (%u MB)",
+                 _fbInitialLength, _fbInitialLength / (1024 * 1024),
+                 actualGfxLength, actualGfxLength / (1024 * 1024));
         _fbInitialLength = actualGfxLength;
         //
         // Keep using the Hyper-V reserved base address for consistency.
@@ -129,10 +137,17 @@ bool HyperVGraphicsBridge::start(IOService *provider) {
         //
         if (actualGfxBase != 0 && actualGfxBase == _fbInitialBase) {
           HVDBGLOG("Confirmed graphics base address matches: %p", actualGfxBase);
+        } else {
+          HVSYSLOG("Warning: Graphics base mismatch! Expected 0x%X, got %p",
+                   _fbInitialBase, actualGfxBase);
         }
+      } else if (status != kIOReturnSuccess) {
+        HVSYSLOG("Graphics provider not ready yet (status 0x%X), will use initial size", status);
       }
       initFunc->release();
     }
+  } else {
+    HVSYSLOG("Warning: Could not cast provider to HyperVGraphics");
   }
 
   //
@@ -195,6 +210,51 @@ void HyperVGraphicsBridge::stop(IOService *provider) {
   //
 
   super::stop(provider);
+}
+
+IOReturn HyperVGraphicsBridge::message(UInt32 type, IOService *provider, void *argument) {
+  HyperVGraphics *gfxProvider;
+  VMBusVersion gfxVersion = { };
+  IOPhysicalAddress actualGfxBase = 0;
+  UInt32 actualGfxLength = 0;
+  IOReturn status;
+  IOInterruptState ints;
+
+  //
+  // Handle message from graphics provider when it becomes ready.
+  //
+  if (type == kIOMessageServiceIsResumed && !_barSizeUpdated) {
+    HVDBGLOG("Received graphics ready message, updating BAR0 size...");
+    
+    gfxProvider = OSDynamicCast(HyperVGraphics, provider);
+    if (gfxProvider != nullptr) {
+      const OSSymbol *initFunc = OSSymbol::withCStringNoCopy(kHyperVGraphicsPlatformFunctionInit);
+      if (initFunc != nullptr) {
+        status = gfxProvider->callPlatformFunction(initFunc, true,
+                                                   &gfxVersion, &actualGfxBase, &actualGfxLength, nullptr);
+        if (status == kIOReturnSuccess && actualGfxLength > _fbInitialLength) {
+          HVSYSLOG("Updating BAR0 size from 0x%X (%u MB) to 0x%X (%u MB)",
+                   _fbInitialLength, _fbInitialLength / (1024 * 1024),
+                   actualGfxLength, actualGfxLength / (1024 * 1024));
+          
+          //
+          // Update BAR0 size in PCI config space.
+          //
+          if (_pciLock != nullptr) {
+            ints = IOSimpleLockLockDisableInterrupt(_pciLock);
+            _fbInitialLength = actualGfxLength;
+            _barSizeUpdated = true;
+            IOSimpleLockUnlockEnableInterrupt(_pciLock, ints);
+            
+            HVSYSLOG("BAR0 size updated successfully");
+          }
+        }
+        initFunc->release();
+      }
+    }
+  }
+
+  return super::message(type, provider, argument);
 }
 
 bool HyperVGraphicsBridge::configure(IOService *provider) {

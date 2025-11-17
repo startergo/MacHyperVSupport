@@ -279,17 +279,18 @@ IOReturn HyperVGraphics::allocateGraphicsMemory(IOPhysicalAddress *outBase, UInt
   overrideVRAM = OSDynamicCast(OSNumber, getProperty("VRAMSizeBytes"));
   if (overrideVRAM != nullptr) {
     *outLength = static_cast<UInt32>(overrideVRAM->unsigned64BitValue());
-    HVDBGLOG("Using override VRAM size: 0x%X bytes (%u MB)", *outLength, *outLength / (1024 * 1024));
+    HVSYSLOG("Using override VRAM size: 0x%X bytes (%u MB)", *outLength, *outLength / (1024 * 1024));
   } else {
     //
     // Get MMIO bytes from VMBus channel.
     //
     mmioBytesNumber = OSDynamicCast(OSNumber, _hvDevice->getProperty(kHyperVVMBusDeviceChannelMMIOByteCount));
     if (mmioBytesNumber == nullptr) {
-      HVSYSLOG("Failed to get MMIO byte count");
+      HVSYSLOG("Failed to get MMIO byte count from VMBus channel");
       return kIOReturnNoResources;
     }
     *outLength = static_cast<UInt32>(mmioBytesNumber->unsigned64BitValue());
+    HVSYSLOG("VMBus channel reports MMIO size: 0x%X bytes (%u MB)", *outLength, *outLength / (1024 * 1024));
   }
 
   //
@@ -299,7 +300,7 @@ IOReturn HyperVGraphics::allocateGraphicsMemory(IOPhysicalAddress *outBase, UInt
   *outBase = kHyperVSyntheticVideoReservedBase;
   _gfxBaseAllocated = false;  // Not dynamically allocated, so don't free in stop()
 
-  HVDBGLOG("Graphics memory using Hyper-V reserved address %p length 0x%X (%u MB)", 
+  HVSYSLOG("Allocated graphics memory: base=%p length=0x%X (%u MB)", 
            *outBase, *outLength, *outLength / (1024 * 1024));
   return kIOReturnSuccess;
 }

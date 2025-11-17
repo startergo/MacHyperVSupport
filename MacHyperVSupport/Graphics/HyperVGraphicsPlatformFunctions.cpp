@@ -80,7 +80,14 @@ IOReturn HyperVGraphics::platformInitGraphics(VMBusVersion *outVersion, IOPhysic
   _timerEventSource->setTimeoutMS(kHyperVGraphicsImageUpdateRefreshRateMS);
   _fbReady = true;
 
-  HVDBGLOG("Graphics system initialized");
+  HVSYSLOG("Graphics system initialized: version=%u.%u, base=%p, length=0x%X (%u MB)",
+           _gfxVersion.major, _gfxVersion.minor, _gfxBase, _gfxLength, _gfxLength / (1024 * 1024));
+  
+  //
+  // Notify PCI bridge to update BAR0 size now that VRAM is allocated.
+  //
+  messageClients(kIOMessageServiceIsResumed);
+  
   return kIOReturnSuccess;
 }
 
